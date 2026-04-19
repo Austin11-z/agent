@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Agent Lab Chatroom</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css?v=20260314-2" />
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <div class="bg-glow bg-glow-a"></div>
+      <div class="bg-glow bg-glow-b"></div>
+
+      <header class="topbar">
+        <div>
+          <h1>多智能体实验聊天室</h1>
+          <p>主持人 + 同伴代理实验前端原型</p>
+          <p class="role-indicator">当前身份：{{ isAdmin ? "管理员" : "实验人员" }}</p>
+        </div>
+        <div class="topbar-actions">
+          <button v-if="!isAdmin" class="btn ghost admin-entry" @click="openAdminLogin">管理员入口</button>
+          <button v-else class="btn ghost" @click="exitAdmin">退出管理员</button>
+        </div>
+      </header>
+
+      <!-- 管理员密码弹窗 -->
+      <div v-if="showAdminLogin" class="modal-overlay" @click.self="showAdminLogin = false">
+        <div class="modal-box">
+          <h3>管理员验证</h3>
+          <p class="modal-desc">请输入管理员密码以访问 Agent 配置</p>
+          <input
+            ref="pwdInput"
+            v-model="adminPasswordInput"
+            type="password"
+            class="modal-input"
+            placeholder="输入密码"
+            @keydown.enter.prevent="submitAdminLogin"
+          />
+          <p v-if="adminLoginError" class="modal-error">密码错误，请重试</p>
+          <div class="modal-actions">
+            <button class="btn ghost" @click="showAdminLogin = false">取消</button>
+            <button class="btn primary" @click="submitAdminLogin">确认</button>
+          </div>
+        </div>
+      </div>
+
+      <main :class="['layout', { 'layout-participant': !isAdmin }]">
+        <section v-if="isAdmin" class="panel config-panel reveal">
+          <div class="panel-title-row">
+            <h2>Agent 配置</h2>
+            <span class="tag">支持开源 / 非开源模型</span>
+          </div>
+
+          <div class="config-block">
+            <h3>全局 API Key</h3>
+            <label>
+              默认密钥
+              <input v-model.trim="sharedApiKey" type="password" placeholder="所有 agent 为空时自动使用" />
+            </label>
+            <small class="helper-text">如果主持人或同伴自己的 API Key 为空，就会自动使用这里的默认值。</small>
+          </div>
+
+          <div class="config-block">
+            <h3>主持人代理</h3>
+            <div class="inline-actions">
+              <button class="btn ghost" @click="applyHostPreset('opensource')">开源推荐配置</button>
+              <button class="btn ghost" @click="applyHostPreset('proprietary')">闭源推荐配置</button>
+            </div>
+            <div class="form-grid">
+              <label>
+                名称
+                <input v-model.trim="host.name" type="text" />
+              </label>
+              <label>
+                角色定位
+                <input v-model.trim="host.role" type="text" placeholder="例如：流程引导与总结" />
+              </label>
+              <label>
+                模型类型
+                <select v-model="host.modelType">
+                  <option value="opensource">开源模型</option>
+                  <option value="proprietary">非开源模型</option>
+                </select>
+              </label>
+              <label>
+                模型名称
+                <template v-if="host.providerType === 'ollama'">
+                  <div class="model-select-row">
+                    <select v-model="host.modelName">
+                      <option disabled value="">请选择本地模型</option>
+                      <option v-for="name in hostModelOptions" :key="name" :value="name">
+                        {{ name }}
+                      </option>
+                    </select>
+                    <button class="btn ghost" type="button" @click="refreshHostOllamaModels" :disabled="hostModelsLoading">
+                      {{ hostModelsLoading ? "读取中..." : "刷新模型" }}
+                    </button>
+                  </div>
+                  <small class="helper-text" v-if="hostModelsError">{{ hostModelsError }}</small>
+                  <small class="helper-text" v-else-if="hostModelOptions.length">已读取 {{ hostModelOptions.length }} 个本地模型</small>
+                </template>
+                <input v-else v-model.trim="host.modelName" type="text" />
+              </label>
+              <label>
+                Provider
+                <select v-model="host.providerType">
+                  <option v-for="p in providerOptions(host.modelType)" :key="p.value" :value="p.value">
+                    {{ p.label }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                API Base URL
+                <input v-model.trim="host.endpoint" type="text" placeholder="例如：https://api.openai.com/v1" />
+              </label>
+              <label>
+                API Key
+                <input v-model.trim="host.apiKey" type="password" placeholder="sk-..." />
+              </label>
+            </div>
+            <div class="form-grid params-grid">
+              <label>
+                Temperature
+                <input v-model.number="host.temperature" type="number" min="0" max="2" step="0.1" />
+              </label>
+              <label>
+                Max Tokens
+                <input v-model.number="host.maxTokens" type="number" min="1" step="1" />
+              </label>
+            </div>
+            <div class="effective-settings">
+              <strong>当前实际生效参数</strong>
+              <div class="effective-item">
+                <span class="effective-label">模型</span>
+                <span class="effective-value">{{ host.modelName || "未设置" }}</span>
+              </div>
+              <div class="effective-item">
+                <span class="effective-label">Provider</span>
+                <span class="effective-value">{{ host.providerType || "未设置" }}</span>
+              </div>
+              <div class="effective-item">
+                <span class="effective-label">Temperature</span>
+                <span class="effective-value">{{ effectiveHostTemperature }}</span>
+              </div>
+              <div class="effective-item">
+                <span class="effective-label">实际 max_tokens</span>
+                <span class="effective-value">{{ effectiveHostIntroMaxTokens }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="config-block">
+            <h3>{{ editingPeerId ? "编辑同伴代理" : "添加同伴代理" }}</h3>
+            <div class="inline-actions">
+              <button class="btn ghost" @click="applyNewPeerPreset('opensource')">开源推荐配置</button>
+              <button class="btn ghost" @click="applyNewPeerPreset('proprietary')">闭源推荐配置</button>
+            </div>
+            <div class="form-grid">
+              <label>
+                名称
+                <input v-model.trim="newPeer.name" type="text" placeholder="例如：同伴 Beta" />
+              </label>
+              <label>
+                角色定位
+                <input v-model.trim="newPeer.role" type="text" placeholder="例如：批判型分析者" />
+              </label>
+              <label>
+                模型类型
+                <select v-model="newPeer.modelType">
+                  <option value="opensource">开源模型</option>
+                  <option value="proprietary">非开源模型</option>
+                </select>
+              </label>
+              <label>
+                Provider
+                <select v-model="newPeer.providerType">
+                  <option v-for="p in providerOptions(newPeer.modelType)" :key="p.value" :value="p.value">
+                    {{ p.label }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                模型名称
+                <input
+                  v-model.trim="newPeer.modelName"
+                  type="text"
+                  placeholder="例如：gpt-4.1 / llama-3.3-70b"
+                />
+              </label>
+              <label>
+                API Base URL
+                <input v-model.trim="newPeer.endpoint" type="text" placeholder="例如：http://localhost:11434/v1" />
+              </label>
+              <label>
+                API Key
+                <input v-model.trim="newPeer.apiKey" type="password" placeholder="可选" />
+              </label>
+            </div>
+            <div class="form-grid params-grid">
+              <label>
+                Temperature
+                <input v-model.number="newPeer.temperature" type="number" min="0" max="2" step="0.1" />
+              </label>
+              <label>
+                Max Tokens
+                <input v-model.number="newPeer.maxTokens" type="number" min="1" step="1" />
+              </label>
+            </div>
+            <div class="inline-actions">
+              <button class="btn ghost" @click="addPeer">{{ editingPeerId ? "保存修改" : "+ 添加同伴" }}</button>
+              <button v-if="editingPeerId" class="btn ghost" @click="cancelPeerEditing">取消编辑</button>
+            </div>
+          </div>
+
+          <div class="config-block">
+            <h3>当前实验成员</h3>
+            <ul class="agent-list">
+              <li v-for="agent in allAgents" :key="agent.id" class="agent-item">
+                <div class="agent-meta">
+                  <strong>{{ agent.name }}</strong>
+                  <span>{{ agent.role }}</span>
+                  <span>{{ agent.endpoint }}</span>
+                </div>
+                <div class="agent-actions">
+                  <span class="model-chip">{{ modelTypeLabel(agent.modelType) }} · {{ agent.providerType }} · {{ agent.modelName }}</span>
+                  <button v-if="agent.id !== host.id" class="btn ghost" @click="startEditPeer(agent.id)">{{ editingPeerId === agent.id ? "编辑中" : "编辑" }}</button>
+                  <button v-if="agent.id !== host.id" class="btn danger" @click="removePeer(agent.id)">移除</button>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="panel chat-panel reveal">
+          <div class="panel-title-row">
+            <h2>实验聊天室</h2>
+            <div class="actions">
+              <button class="btn primary" @click="runExperimentFlow">开始实验</button>
+              <button v-if="isAdmin" class="btn ghost" @click="clearChat">清空记录</button>
+            </div>
+          </div>
+
+          <div class="phase-strip">
+            <span
+              v-for="(label, idx) in phaseLabels"
+              :key="label"
+              :class="['phase-pill', { active: idx === activePhaseIndex }]"
+            >
+              {{ idx + 1 }}. {{ label }}
+            </span>
+          </div>
+
+          <div ref="chatFeed" class="chat-feed" aria-live="polite">
+            <article v-for="msg in messages" :key="msg.id" class="message">
+              <div class="avatar" :style="{ background: colorByName(msg.speaker.name) }">
+                {{ initials(msg.speaker.name) }}
+              </div>
+              <div class="bubble">
+                <div class="meta">
+                  <span>{{ msg.speaker.name }}{{ msg.phase ? ` · ${msg.phase}` : "" }}</span>
+                  <span>{{ msg.time }}</span>
+                </div>
+                <p class="text">{{ msg.text }}</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="composer">
+            <label v-if="isAdmin">
+              发言人
+              <select v-model="selectedSpeakerId">
+                <option v-for="agent in allAgents" :key="agent.id" :value="agent.id">
+                  {{ agent.name }} ({{ agent.role }})
+                </option>
+              </select>
+            </label>
+            <label v-else>
+              发言身份
+              <input type="text" :value="participantAgent.name" disabled />
+            </label>
+            <label class="composer-input">
+              内容
+              <input
+                v-model.trim="messageInput"
+                type="text"
+                placeholder="输入临时发言，补充实验过程..."
+                @keydown.enter.prevent="sendMessage"
+              />
+            </label>
+            <button class="btn primary" @click="sendMessage">发送</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="./app.js?v=20260413-1"></script>
+  </body>
+</html>

@@ -58,6 +58,13 @@
           </div>
 
           <div class="config-block">
+            <h3>题库状态</h3>
+            <div v-if="questionsLoading" class="helper-text">正在加载题库...</div>
+            <div v-else-if="questionsError" class="helper-text" style="color:var(--accent)">{{ questionsError }}</div>
+            <div v-else class="helper-text">已加载 {{ questions.length }} 道题（营养学 / 专业心理学 / 经济学），每次实验随机抽 10 道，逐题进行。</div>
+          </div>
+
+          <div class="config-block">
             <h3>全局 API Key</h3>
             <label>
               默认密钥
@@ -171,6 +178,16 @@
                 <input v-model.trim="newPeer.role" type="text" placeholder="例如：批判型分析者" />
               </label>
               <label>
+                实验立场
+                <select v-model="newPeer.stance">
+                  <option v-for="s in stanceOptions()" :key="s.value" :value="s.value">{{ s.label }}</option>
+                </select>
+              </label>
+              <label>
+                人设描述
+                <input v-model.trim="newPeer.persona" type="text" placeholder="例如：25岁研究生，理工科背景" />
+              </label>
+              <label>
                 模型类型
                 <select v-model="newPeer.modelType">
                   <option value="opensource">开源模型</option>
@@ -228,6 +245,7 @@
                   <span>{{ agent.endpoint }}</span>
                 </div>
                 <div class="agent-actions">
+                  <span v-if="agent.id !== host.id && agent.stance" :class="['stance-chip', 'stance-chip--' + agent.stance]">{{ stanceLabel(agent.stance) }}</span>
                   <span class="model-chip">{{ modelTypeLabel(agent.modelType) }} · {{ agent.providerType }} · {{ agent.modelName }}</span>
                   <button v-if="agent.id !== host.id" class="btn ghost" @click="startEditPeer(agent.id)">{{ editingPeerId === agent.id ? "编辑中" : "编辑" }}</button>
                   <button v-if="agent.id !== host.id" class="btn danger" @click="removePeer(agent.id)">移除</button>
@@ -271,7 +289,13 @@
             </article>
           </div>
 
-          <div class="composer">
+          <!-- 介绍结束后显示开始答题按钮 -->
+          <div v-if="introComplete" class="start-panel">
+            <button class="btn primary btn-start" @click="startExperiment">开始答题 →</button>
+          </div>
+
+          <!-- 普通输入框：非实验状态 -->
+          <div v-else-if="!experimentRunning" class="composer">
             <label v-if="isAdmin">
               发言人
               <select v-model="selectedSpeakerId">
@@ -297,6 +321,105 @@
           </div>
         </section>
       </main>
+
+      <!-- 全屏答题卡 -->
+      <div v-if="appView === 'question'" class="question-overlay">
+        <div class="question-card">
+          <div class="question-header">
+            <span class="question-progress">第 {{ currentQuestionIndex + 1 }} 题 / 共 10 题</span>
+            <span class="question-subject">{{ currentQuestion?.subject }}</span>
+          </div>
+
+          <p class="question-text">{{ currentQuestion?.question }}</p>
+
+          <!-- 第一次作答 -->
+          <div v-if="questionViewState === 'answering_first'">
+            <p class="answer-instruction">请选择你认为正确的答案</p>
+            <div class="choice-group">
+              <button v-for="opt in ['A','B','C','D']" :key="opt"
+                :class="['choice-btn', { selected: participantChoice === opt }]"
+                @click="participantChoice = opt">
+                <span class="choice-label">{{ opt }}</span>
+                <span class="choice-text">{{ currentQuestion[opt] }}</span>
+              </button>
+            </div>
+            <div class="confidence-row">
+              <span>置信度</span>
+              <input type="range" min="1" max="10" step="1" v-model.number="participantConfidence" />
+              <span class="confidence-value">{{ participantConfidence }} / 10</span>
+            </div>
+            <button class="btn primary btn-submit" :disabled="!participantChoice" @click="submitParticipantAnswer">
+              提交
+            </button>
+          </div>
+
+          <!-- 同伴作答中 -->
+          <div v-if="questionViewState === 'peers_responding'" class="peers-responding">
+            <p class="answer-instruction">其他参与者正在回答...</p>
+            <div class="peer-response-list">
+              <div v-for="(item, idx) in peerResponses" :key="idx" class="peer-response-item">
+                <div class="peer-avatar" :style="{ background: colorByName(item.peer.name) }">
+                  {{ initials(item.peer.name) }}
+                </div>
+                <div class="peer-response-body">
+                  <span class="peer-name">{{ item.peer.name }}</span>
+                  <p>{{ item.text }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 第二次作答 -->
+          <div v-if="questionViewState === 'answering_second'">
+            <div class="peer-response-list peer-response-list--final">
+              <div v-for="(item, idx) in peerResponses" :key="idx" class="peer-response-item">
+                <div class="peer-avatar" :style="{ background: colorByName(item.peer.name) }">
+                  {{ initials(item.peer.name) }}
+                </div>
+                <div class="peer-response-body">
+                  <span class="peer-name">{{ item.peer.name }}</span>
+                  <p>{{ item.text }}</p>
+                </div>
+              </div>
+            </div>
+            <p class="answer-instruction">看完大家的回答，请重新作答</p>
+            <div class="choice-group">
+              <button v-for="opt in ['A','B','C','D']" :key="opt"
+                :class="['choice-btn', { selected: participantChoice === opt }]"
+                @click="participantChoice = opt">
+                <span class="choice-label">{{ opt }}</span>
+                <span class="choice-text">{{ currentQuestion[opt] }}</span>
+              </button>
+            </div>
+            <div class="confidence-row">
+              <span>置信度</span>
+              <input type="range" min="1" max="10" step="1" v-model.number="participantConfidence" />
+              <span class="confidence-value">{{ participantConfidence }} / 10</span>
+            </div>
+            <button class="btn primary btn-submit" :disabled="!participantChoice" @click="submitParticipantAnswer">
+              提交
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 实验完成页 -->
+      <div v-if="appView === 'complete'" class="question-overlay">
+        <div class="question-card complete-card">
+          <h2>实验完成</h2>
+          <p>感谢你的参与，10 道题已全部完成。</p>
+          <div class="complete-stats">
+            <div class="stat-item">
+              <span class="stat-num">{{ sessionAnswers.filter(a => a.conformed).length }}</span>
+              <span class="stat-label">改变答案次数</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-num">{{ sessionAnswers.filter(a => a.trialType === 'critical' && a.conformed).length }}</span>
+              <span class="stat-label">关键题从众次数</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>

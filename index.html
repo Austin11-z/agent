@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,33 +19,33 @@
 
       <header class="topbar">
         <div>
-          <h1>多智能体实验聊天室</h1>
-          <p>主持人 + 同伴代理实验前端原型</p>
-          <p class="role-indicator">当前身份：{{ isAdmin ? "管理员" : "实验人员" }}</p>
+          <h1>Multi-Agent Experiment Chatroom</h1>
+          <p>Host + Peer Agent Experiment Frontend</p>
+          <p class="role-indicator">Current role: {{ isAdmin ? "Admin" : "Participant" }}</p>
         </div>
         <div class="topbar-actions">
-          <button v-if="!isAdmin" class="btn ghost admin-entry" @click="openAdminLogin">管理员入口</button>
-          <button v-else class="btn ghost" @click="exitAdmin">退出管理员</button>
+          <button v-if="!isAdmin" class="btn ghost admin-entry" @click="openAdminLogin">Admin Login</button>
+          <button v-else class="btn ghost" @click="exitAdmin">Exit Admin</button>
         </div>
       </header>
 
-      <!-- 管理员密码弹窗 -->
+      <!-- Admin password dialog -->
       <div v-if="showAdminLogin" class="modal-overlay" @click.self="showAdminLogin = false">
         <div class="modal-box">
-          <h3>管理员验证</h3>
-          <p class="modal-desc">请输入管理员密码以访问 Agent 配置</p>
+          <h3>Admin Verification</h3>
+          <p class="modal-desc">Enter the admin password to access Agent configuration</p>
           <input
             ref="pwdInput"
             v-model="adminPasswordInput"
             type="password"
             class="modal-input"
-            placeholder="输入密码"
+            placeholder="Enter password"
             @keydown.enter.prevent="submitAdminLogin"
           />
-          <p v-if="adminLoginError" class="modal-error">密码错误，请重试</p>
+          <p v-if="adminLoginError" class="modal-error">Incorrect password, please try again</p>
           <div class="modal-actions">
-            <button class="btn ghost" @click="showAdminLogin = false">取消</button>
-            <button class="btn primary" @click="submitAdminLogin">确认</button>
+            <button class="btn ghost" @click="showAdminLogin = false">Cancel</button>
+            <button class="btn primary" @click="submitAdminLogin">Confirm</button>
           </div>
         </div>
       </div>
@@ -53,64 +53,73 @@
       <main :class="['layout', { 'layout-participant': !isAdmin }]">
         <section v-if="isAdmin" class="panel config-panel reveal">
           <div class="panel-title-row">
-            <h2>Agent 配置</h2>
-            <span class="tag">支持开源 / 非开源模型</span>
+            <h2>Agent Configuration</h2>
+            <span class="tag">Supports open-source / proprietary models</span>
           </div>
 
           <div class="config-block">
-            <h3>题库状态</h3>
-            <div v-if="questionsLoading" class="helper-text">正在加载题库...</div>
-            <div v-else-if="questionsError" class="helper-text" style="color:var(--accent)">{{ questionsError }}</div>
-            <div v-else class="helper-text">已加载 {{ questions.length }} 道题（营养学 / 专业心理学 / 经济学），每次实验随机抽 10 道，逐题进行。</div>
-          </div>
-
-          <div class="config-block">
-            <h3>全局 API Key</h3>
-            <label>
-              默认密钥
-              <input v-model.trim="sharedApiKey" type="password" placeholder="所有 agent 为空时自动使用" />
-            </label>
-            <small class="helper-text">如果主持人或同伴自己的 API Key 为空，就会自动使用这里的默认值。</small>
-          </div>
-
-          <div class="config-block">
-            <h3>主持人代理</h3>
+            <h3>Experiment Group</h3>
             <div class="inline-actions">
-              <button class="btn ghost" @click="applyHostPreset('opensource')">开源推荐配置</button>
-              <button class="btn ghost" @click="applyHostPreset('proprietary')">闭源推荐配置</button>
+              <button :class="['btn', experimentGroup === 'majority' ? 'primary' : 'ghost']" @click="experimentGroup = 'majority'">Majority (3 vs 1 opposing)</button>
+              <button :class="['btn', experimentGroup === 'minority' ? 'primary' : 'ghost']" @click="experimentGroup = 'minority'">Minority (2 agree + 1 oppose)</button>
+            </div>
+            <small class="helper-text">Current: {{ experimentGroup === 'majority' ? 'Majority — all AI peers oppose the participant' : 'Minority — 2 AI peers agree, 1 opposes' }}. Can also be set via URL parameter ?group=majority/minority.</small>
+          </div>
+
+          <div class="config-block">
+            <h3>Question Bank</h3>
+            <div v-if="questionsLoading" class="helper-text">Loading question bank...</div>
+            <div v-else-if="questionsError" class="helper-text" style="color:var(--accent)">{{ questionsError }}</div>
+            <div v-else class="helper-text">Loaded {{ questions.length }} questions (Nutrition / Professional Psychology / Econometrics). 10 will be sampled randomly per session.</div>
+          </div>
+
+          <div class="config-block">
+            <h3>Global API Key</h3>
+            <label>
+              Default Key
+              <input v-model.trim="sharedApiKey" type="password" placeholder="Used automatically when an agent's own key is empty" />
+            </label>
+            <small class="helper-text">If a host or peer agent's API Key is empty, this default key is used.</small>
+          </div>
+
+          <div class="config-block">
+            <h3>Host Agent</h3>
+            <div class="inline-actions">
+              <button class="btn ghost" @click="applyHostPreset('opensource')">Open-source preset</button>
+              <button class="btn ghost" @click="applyHostPreset('proprietary')">Proprietary preset</button>
             </div>
             <div class="form-grid">
               <label>
-                名称
+                Name
                 <input v-model.trim="host.name" type="text" />
               </label>
               <label>
-                角色定位
-                <input v-model.trim="host.role" type="text" placeholder="例如：流程引导与总结" />
+                Role
+                <input v-model.trim="host.role" type="text" placeholder="e.g. Facilitator & Summarizer" />
               </label>
               <label>
-                模型类型
+                Model Type
                 <select v-model="host.modelType">
-                  <option value="opensource">开源模型</option>
-                  <option value="proprietary">非开源模型</option>
+                  <option value="opensource">Open Source</option>
+                  <option value="proprietary">Proprietary</option>
                 </select>
               </label>
               <label>
-                模型名称
+                Model Name
                 <template v-if="host.providerType === 'ollama'">
                   <div class="model-select-row">
                     <select v-model="host.modelName">
-                      <option disabled value="">请选择本地模型</option>
+                      <option disabled value="">Select a local model</option>
                       <option v-for="name in hostModelOptions" :key="name" :value="name">
                         {{ name }}
                       </option>
                     </select>
                     <button class="btn ghost" type="button" @click="refreshHostOllamaModels" :disabled="hostModelsLoading">
-                      {{ hostModelsLoading ? "读取中..." : "刷新模型" }}
+                      {{ hostModelsLoading ? "Loading..." : "Refresh Models" }}
                     </button>
                   </div>
                   <small class="helper-text" v-if="hostModelsError">{{ hostModelsError }}</small>
-                  <small class="helper-text" v-else-if="hostModelOptions.length">已读取 {{ hostModelOptions.length }} 个本地模型</small>
+                  <small class="helper-text" v-else-if="hostModelOptions.length">{{ hostModelOptions.length }} local models loaded</small>
                 </template>
                 <input v-else v-model.trim="host.modelName" type="text" />
               </label>
@@ -124,7 +133,7 @@
               </label>
               <label>
                 API Base URL
-                <input v-model.trim="host.endpoint" type="text" placeholder="例如：https://api.openai.com/v1" />
+                <input v-model.trim="host.endpoint" type="text" placeholder="e.g. https://api.openai.com/v1" />
               </label>
               <label>
                 API Key
@@ -142,56 +151,50 @@
               </label>
             </div>
             <div class="effective-settings">
-              <strong>当前实际生效参数</strong>
+              <strong>Effective Parameters</strong>
               <div class="effective-item">
-                <span class="effective-label">模型</span>
-                <span class="effective-value">{{ host.modelName || "未设置" }}</span>
+                <span class="effective-label">Model</span>
+                <span class="effective-value">{{ host.modelName || "Not set" }}</span>
               </div>
               <div class="effective-item">
                 <span class="effective-label">Provider</span>
-                <span class="effective-value">{{ host.providerType || "未设置" }}</span>
+                <span class="effective-value">{{ host.providerType || "Not set" }}</span>
               </div>
               <div class="effective-item">
                 <span class="effective-label">Temperature</span>
                 <span class="effective-value">{{ effectiveHostTemperature }}</span>
               </div>
               <div class="effective-item">
-                <span class="effective-label">实际 max_tokens</span>
+                <span class="effective-label">Max Tokens</span>
                 <span class="effective-value">{{ effectiveHostIntroMaxTokens }}</span>
               </div>
             </div>
           </div>
 
           <div class="config-block">
-            <h3>{{ editingPeerId ? "编辑同伴代理" : "添加同伴代理" }}</h3>
+            <h3>{{ editingPeerId ? "Edit Peer Agent" : "Add Peer Agent" }}</h3>
             <div class="inline-actions">
-              <button class="btn ghost" @click="applyNewPeerPreset('opensource')">开源推荐配置</button>
-              <button class="btn ghost" @click="applyNewPeerPreset('proprietary')">闭源推荐配置</button>
+              <button class="btn ghost" @click="applyNewPeerPreset('opensource')">Open-source preset</button>
+              <button class="btn ghost" @click="applyNewPeerPreset('proprietary')">Proprietary preset</button>
             </div>
             <div class="form-grid">
               <label>
-                名称
-                <input v-model.trim="newPeer.name" type="text" placeholder="例如：同伴 Beta" />
+                Name
+                <input v-model.trim="newPeer.name" type="text" placeholder="e.g. Peer Beta" />
               </label>
               <label>
-                角色定位
-                <input v-model.trim="newPeer.role" type="text" placeholder="例如：批判型分析者" />
+                Role
+                <input v-model.trim="newPeer.role" type="text" placeholder="e.g. Critical Analyst" />
               </label>
               <label>
-                实验立场
-                <select v-model="newPeer.stance">
-                  <option v-for="s in stanceOptions()" :key="s.value" :value="s.value">{{ s.label }}</option>
-                </select>
+                Persona
+                <input v-model.trim="newPeer.persona" type="text" placeholder="e.g. 25-year-old grad student, STEM background" />
               </label>
               <label>
-                人设描述
-                <input v-model.trim="newPeer.persona" type="text" placeholder="例如：25岁研究生，理工科背景" />
-              </label>
-              <label>
-                模型类型
+                Model Type
                 <select v-model="newPeer.modelType">
-                  <option value="opensource">开源模型</option>
-                  <option value="proprietary">非开源模型</option>
+                  <option value="opensource">Open Source</option>
+                  <option value="proprietary">Proprietary</option>
                 </select>
               </label>
               <label>
@@ -203,20 +206,20 @@
                 </select>
               </label>
               <label>
-                模型名称
+                Model Name
                 <input
                   v-model.trim="newPeer.modelName"
                   type="text"
-                  placeholder="例如：gpt-4.1 / llama-3.3-70b"
+                  placeholder="e.g. gpt-4.1 / llama-3.3-70b"
                 />
               </label>
               <label>
                 API Base URL
-                <input v-model.trim="newPeer.endpoint" type="text" placeholder="例如：http://localhost:11434/v1" />
+                <input v-model.trim="newPeer.endpoint" type="text" placeholder="e.g. http://localhost:11434/v1" />
               </label>
               <label>
                 API Key
-                <input v-model.trim="newPeer.apiKey" type="password" placeholder="可选" />
+                <input v-model.trim="newPeer.apiKey" type="password" placeholder="Optional" />
               </label>
             </div>
             <div class="form-grid params-grid">
@@ -230,13 +233,13 @@
               </label>
             </div>
             <div class="inline-actions">
-              <button class="btn ghost" @click="addPeer">{{ editingPeerId ? "保存修改" : "+ 添加同伴" }}</button>
-              <button v-if="editingPeerId" class="btn ghost" @click="cancelPeerEditing">取消编辑</button>
+              <button class="btn ghost" @click="addPeer">{{ editingPeerId ? "Save Changes" : "+ Add Peer" }}</button>
+              <button v-if="editingPeerId" class="btn ghost" @click="cancelPeerEditing">Cancel</button>
             </div>
           </div>
 
           <div class="config-block">
-            <h3>当前实验成员</h3>
+            <h3>Current Experiment Members</h3>
             <ul class="agent-list">
               <li v-for="agent in allAgents" :key="agent.id" class="agent-item">
                 <div class="agent-meta">
@@ -245,10 +248,9 @@
                   <span>{{ agent.endpoint }}</span>
                 </div>
                 <div class="agent-actions">
-                  <span v-if="agent.id !== host.id && agent.stance" :class="['stance-chip', 'stance-chip--' + agent.stance]">{{ stanceLabel(agent.stance) }}</span>
                   <span class="model-chip">{{ modelTypeLabel(agent.modelType) }} · {{ agent.providerType }} · {{ agent.modelName }}</span>
-                  <button v-if="agent.id !== host.id" class="btn ghost" @click="startEditPeer(agent.id)">{{ editingPeerId === agent.id ? "编辑中" : "编辑" }}</button>
-                  <button v-if="agent.id !== host.id" class="btn danger" @click="removePeer(agent.id)">移除</button>
+                  <button v-if="agent.id !== host.id" class="btn ghost" @click="startEditPeer(agent.id)">{{ editingPeerId === agent.id ? "Editing..." : "Edit" }}</button>
+                  <button v-if="agent.id !== host.id" class="btn danger" @click="removePeer(agent.id)">Remove</button>
                 </div>
               </li>
             </ul>
@@ -257,10 +259,10 @@
 
         <section class="panel chat-panel reveal">
           <div class="panel-title-row">
-            <h2>实验聊天室</h2>
+            <h2>Experiment Chatroom</h2>
             <div class="actions">
-              <button class="btn primary" @click="runExperimentFlow">开始实验</button>
-              <button v-if="isAdmin" class="btn ghost" @click="clearChat">清空记录</button>
+              <button class="btn primary" @click="runExperimentFlow">Start Experiment</button>
+              <button v-if="isAdmin" class="btn ghost" @click="clearChat">Clear Chat</button>
             </div>
           </div>
 
@@ -289,15 +291,15 @@
             </article>
           </div>
 
-          <!-- 介绍结束后显示开始答题按钮 -->
+          <!-- Start button shown after introductions -->
           <div v-if="introComplete" class="start-panel">
-            <button class="btn primary btn-start" @click="startExperiment">开始答题 →</button>
+            <button class="btn primary btn-start" @click="startExperiment">Start Questions →</button>
           </div>
 
-          <!-- 普通输入框：非实验状态 -->
+          <!-- Input box: non-experiment state -->
           <div v-else-if="!experimentRunning" class="composer">
             <label v-if="isAdmin">
-              发言人
+              Speaker
               <select v-model="selectedSpeakerId">
                 <option v-for="agent in allAgents" :key="agent.id" :value="agent.id">
                   {{ agent.name }} ({{ agent.role }})
@@ -305,36 +307,36 @@
               </select>
             </label>
             <label v-else>
-              发言身份
+              Speaking as
               <input type="text" :value="participantAgent.name" disabled />
             </label>
             <label class="composer-input">
-              内容
+              Message
               <input
                 v-model.trim="messageInput"
                 type="text"
-                placeholder="输入临时发言，补充实验过程..."
+                placeholder="Type a message to supplement the experiment..."
                 @keydown.enter.prevent="sendMessage"
               />
             </label>
-            <button class="btn primary" @click="sendMessage">发送</button>
+            <button class="btn primary" @click="sendMessage">Send</button>
           </div>
         </section>
       </main>
 
-      <!-- 全屏答题卡 -->
+      <!-- Full-screen question card -->
       <div v-if="appView === 'question'" class="question-overlay">
         <div class="question-card">
           <div class="question-header">
-            <span class="question-progress">第 {{ currentQuestionIndex + 1 }} 题 / 共 10 题</span>
+            <span class="question-progress">Question {{ currentQuestionIndex + 1 }} / 10</span>
             <span class="question-subject">{{ currentQuestion?.subject }}</span>
           </div>
 
           <p class="question-text">{{ currentQuestion?.question }}</p>
 
-          <!-- 第一次作答 -->
+          <!-- First answer -->
           <div v-if="questionViewState === 'answering_first'">
-            <p class="answer-instruction">请选择你认为正确的答案</p>
+            <p class="answer-instruction">Select the answer you think is correct</p>
             <div class="choice-group">
               <button v-for="opt in ['A','B','C','D']" :key="opt"
                 :class="['choice-btn', { selected: participantChoice === opt }]"
@@ -343,19 +345,22 @@
                 <span class="choice-text">{{ currentQuestion[opt] }}</span>
               </button>
             </div>
-            <div class="confidence-row">
-              <span>置信度</span>
-              <input type="range" min="1" max="10" step="1" v-model.number="participantConfidence" />
-              <span class="confidence-value">{{ participantConfidence }} / 10</span>
+            <div class="confidence-section">
+              <span class="confidence-label">Your confidence (1 = very uncertain, 10 = very certain)</span>
+              <div class="confidence-btns">
+                <button v-for="n in 10" :key="n"
+                  :class="['conf-btn', { selected: participantConfidence === n }]"
+                  @click="participantConfidence = n">{{ n }}</button>
+              </div>
             </div>
-            <button class="btn primary btn-submit" :disabled="!participantChoice" @click="submitParticipantAnswer">
-              提交
+            <button class="btn primary btn-submit" :disabled="!participantChoice || !participantConfidence" @click="submitParticipantAnswer">
+              Submit
             </button>
           </div>
 
-          <!-- 同伴作答中 -->
+          <!-- Peers responding -->
           <div v-if="questionViewState === 'peers_responding'" class="peers-responding">
-            <p class="answer-instruction">其他参与者正在回答...</p>
+            <p class="answer-instruction">Other participants are answering...</p>
             <div class="peer-response-list">
               <div v-for="(item, idx) in peerResponses" :key="idx" class="peer-response-item">
                 <div class="peer-avatar" :style="{ background: colorByName(item.peer.name) }">
@@ -369,8 +374,11 @@
             </div>
           </div>
 
-          <!-- 第二次作答 -->
+          <!-- Second answer -->
           <div v-if="questionViewState === 'answering_second'">
+            <div v-if="firstAnswer" class="first-answer-badge">
+              Your first answer: <strong>{{ firstAnswer.choice }}</strong> &nbsp;·&nbsp; Confidence: <strong>{{ firstAnswer.confidence }}/10</strong>
+            </div>
             <div class="peer-response-list peer-response-list--final">
               <div v-for="(item, idx) in peerResponses" :key="idx" class="peer-response-item">
                 <div class="peer-avatar" :style="{ background: colorByName(item.peer.name) }">
@@ -382,7 +390,7 @@
                 </div>
               </div>
             </div>
-            <p class="answer-instruction">看完大家的回答，请重新作答</p>
+            <p class="answer-instruction">Having seen everyone's responses, please answer again</p>
             <div class="choice-group">
               <button v-for="opt in ['A','B','C','D']" :key="opt"
                 :class="['choice-btn', { selected: participantChoice === opt }]"
@@ -391,31 +399,34 @@
                 <span class="choice-text">{{ currentQuestion[opt] }}</span>
               </button>
             </div>
-            <div class="confidence-row">
-              <span>置信度</span>
-              <input type="range" min="1" max="10" step="1" v-model.number="participantConfidence" />
-              <span class="confidence-value">{{ participantConfidence }} / 10</span>
+            <div class="confidence-section">
+              <span class="confidence-label">Your confidence (1 = very uncertain, 10 = very certain)</span>
+              <div class="confidence-btns">
+                <button v-for="n in 10" :key="n"
+                  :class="['conf-btn', { selected: participantConfidence === n }]"
+                  @click="participantConfidence = n">{{ n }}</button>
+              </div>
             </div>
-            <button class="btn primary btn-submit" :disabled="!participantChoice" @click="submitParticipantAnswer">
-              提交
+            <button class="btn primary btn-submit" :disabled="!participantChoice || !participantConfidence" @click="submitParticipantAnswer">
+              Submit
             </button>
           </div>
         </div>
       </div>
 
-      <!-- 实验完成页 -->
+      <!-- Experiment complete page -->
       <div v-if="appView === 'complete'" class="question-overlay">
         <div class="question-card complete-card">
-          <h2>实验完成</h2>
-          <p>感谢你的参与，10 道题已全部完成。</p>
+          <h2>Experiment Complete</h2>
+          <p>Thank you for participating. All 10 questions have been answered.</p>
           <div class="complete-stats">
             <div class="stat-item">
               <span class="stat-num">{{ sessionAnswers.filter(a => a.conformed).length }}</span>
-              <span class="stat-label">改变答案次数</span>
+              <span class="stat-label">Answer Changes</span>
             </div>
             <div class="stat-item">
               <span class="stat-num">{{ sessionAnswers.filter(a => a.trialType === 'critical' && a.conformed).length }}</span>
-              <span class="stat-label">关键题从众次数</span>
+              <span class="stat-label">Conformity Events</span>
             </div>
           </div>
         </div>

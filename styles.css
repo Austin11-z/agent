@@ -454,6 +454,9 @@ select:focus {
       transparent 26px
     );
   padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .message {
@@ -462,6 +465,8 @@ select:focus {
   gap: 10px;
   margin-bottom: 10px;
   animation: slideIn 0.25s ease both;
+  width: 100%;
+  max-width: 720px;
 }
 
 .avatar {
@@ -481,6 +486,8 @@ select:focus {
   border-radius: 12px;
   border: 1px solid rgba(31, 27, 22, 0.13);
   background: #fff;
+  max-width: 680px;
+  width: fit-content;
 }
 
 .meta {
@@ -494,7 +501,9 @@ select:focus {
 
 .text {
   margin: 0;
-  line-height: 1.45;
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .composer {
@@ -720,6 +729,16 @@ select:focus {
   padding: 4px 0;
 }
 
+.first-answer-badge {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(31, 27, 22, 0.07);
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+
 .answer-instruction {
   font-size: 0.85rem;
   color: var(--muted);
@@ -842,3 +861,44 @@ select:focus {
 .stat-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .stat-num { font-size: 2rem; font-weight: 700; color: var(--primary); }
 .stat-label { font-size: 0.8rem; color: var(--muted); }
+
+.confidence-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confidence-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.confidence-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.conf-btn {
+  flex: 1;
+  padding: 10px 0;
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.conf-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.conf-btn.selected {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}

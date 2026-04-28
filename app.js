@@ -4,18 +4,18 @@ createApp({
   data() {
     const proprietaryPreset = {
       providerType: "openai-compatible",
-      endpoint: "https://api.openai.com/v1",
+      endpoint: "https://api.v36.cm/v1",
       apiKey: "",
       temperature: 0.7,
       maxTokens: 2048
     };
     return {
       phaseLabels: [
-        "主持人自我介绍",
-        "同伴依次介绍",
-        "主持人给出问题",
-        "核心实验环节",
-        "实验人员观点总结"
+        "Host Introduction",
+        "Peer Introductions",
+        "Question Release",
+        "Core Experiment",
+        "Summary"
       ],
       activePhaseIndex: -1,
       viewerRole: "participant",
@@ -26,8 +26,8 @@ createApp({
       sharedApiKey: "sk-ytiYqlCOU9Uduxau5709704b396f434b8d6eD2B81c1c3990",
       host: {
         id: "host",
-        name: "主持人 Alpha",
-        role: "实验主持",
+        name: "Host Alpha",
+        role: "Experiment Moderator",
         modelType: "proprietary",
         providerType: proprietaryPreset.providerType,
         modelName: "GPT-4.1",
@@ -39,10 +39,10 @@ createApp({
       peers: [
         {
           id: crypto.randomUUID(),
-          name: "同伴 Beta",
-          role: "发散思考者",
+          name: "Peer Beta",
+          role: "Creative Thinker",
           stance: "biased_agree",
-          persona: "22岁大学生，理工科背景，思维活跃",
+          persona: "22-year-old art student, humanities background, spontaneous and opinionated, often goes with gut feeling",
           modelType: "opensource",
           providerType: "ollama",
           modelName: "Llama-3.3-70B",
@@ -53,14 +53,14 @@ createApp({
         },
         {
           id: crypto.randomUUID(),
-          name: "同伴 Gamma",
-          role: "逻辑校验者",
+          name: "Peer Gamma",
+          role: "Logical Analyst",
           stance: "biased_agree",
-          persona: "35岁职场人士，有较强逻辑分析能力",
+          persona: "42-year-old physician, evidence-based thinker, cautious and methodical, rarely changes opinion without solid reasoning",
           modelType: "proprietary",
           providerType: "openai-compatible",
           modelName: "GPT-4.1",
-          endpoint: "https://api.openai.com/v1",
+          endpoint: "https://api.v36.cm/v1",
           apiKey: "",
           temperature: 0.6,
           maxTokens: 2048
@@ -82,8 +82,8 @@ createApp({
       editingPeerId: null,
       participantAgent: {
         id: "participant",
-        name: "实验人员",
-        role: "观察记录者"
+        name: "Participant",
+        role: "Subject"
       },
       selectedSpeakerId: "host",
       messageInput: "",
@@ -97,6 +97,7 @@ createApp({
       questionsError: "",
       currentQuestion: null,
       appView: "chat",
+      experimentGroup: "majority",
       introComplete: false,
       experimentRunning: false,
       questionViewState: null,
@@ -104,7 +105,8 @@ createApp({
       peerResponses: [],
       answerPhase: null,
       participantChoice: "",
-      participantConfidence: 5,
+      participantConfidence: null,
+      firstAnswer: null,
       answerResolve: null,
       sessionAnswers: []
     };
@@ -118,12 +120,12 @@ createApp({
     },
     effectiveHostIntroMaxTokens() {
       const configured = Number(this.host.maxTokens ?? 2048);
-      if (!Number.isFinite(configured) || configured <= 0) return "未设置";
+      if (!Number.isFinite(configured) || configured <= 0) return "Not set";
       return Math.min(configured, 1500);
     },
     effectiveHostTemperature() {
       const temperature = Number(this.host.temperature ?? 0.7);
-      if (!Number.isFinite(temperature)) return "未设置";
+      if (!Number.isFinite(temperature)) return "Not set";
       return temperature;
     }
   },
@@ -164,10 +166,10 @@ createApp({
     providerOptions(modelType) {
       if (modelType === "opensource") {
         return [
-          { value: "ollama", label: "Ollama (本地推理)" },
-          { value: "vllm", label: "vLLM (自托管服务)" },
+          { value: "ollama", label: "Ollama (Local Inference)" },
+          { value: "vllm", label: "vLLM (Self-hosted)" },
           { value: "lmstudio", label: "LM Studio" },
-          { value: "custom", label: "自定义 OpenAI 兼容接口" }
+          { value: "custom", label: "Custom OpenAI-compatible API" }
         ];
       }
       return [
@@ -175,7 +177,7 @@ createApp({
         { value: "anthropic", label: "Anthropic" },
         { value: "google", label: "Google Gemini" },
         { value: "azure-openai", label: "Azure OpenAI" },
-        { value: "custom", label: "自定义接口" }
+        { value: "custom", label: "Custom API" }
       ];
     },
 
@@ -191,7 +193,7 @@ createApp({
       }
       return {
         providerType: "openai-compatible",
-        endpoint: "https://api.openai.com/v1",
+        endpoint: "https://api.v36.cm/v1",
         apiKey: "",
         temperature: 0.7,
         maxTokens: 2048
@@ -219,7 +221,7 @@ createApp({
     },
 
     modelTypeLabel(modelType) {
-      return modelType === "opensource" ? "开源" : "非开源";
+      return modelType === "opensource" ? "Open Source" : "Proprietary";
     },
 
     initials(name) {
@@ -271,19 +273,19 @@ createApp({
 
     stanceOptions() {
       return [
-        { value: "biased_agree", label: "偏向赞同（从众压力）" },
-        { value: "biased_disagree", label: "偏向反对（逆向压力）" },
-        { value: "neutral", label: "中立（对照组）" },
-        { value: "majority", label: "随大流（跟随多数）" }
+        { value: "biased_agree", label: "Biased Agree (conformity pressure)" },
+        { value: "biased_disagree", label: "Biased Disagree (counter pressure)" },
+        { value: "neutral", label: "Neutral (control)" },
+        { value: "majority", label: "Majority follower" }
       ];
     },
 
     stanceLabel(stance) {
       const map = {
-        biased_agree: "偏向赞同",
-        biased_disagree: "偏向反对",
-        neutral: "中立",
-        majority: "随大流"
+        biased_agree: "Biased Agree",
+        biased_disagree: "Biased Disagree",
+        neutral: "Neutral",
+        majority: "Majority"
       };
       return map[stance] || stance;
     },
@@ -327,7 +329,7 @@ createApp({
       const modelName = this.newPeer.modelName.trim();
       const endpoint = this.newPeer.endpoint.trim();
       if (!name || !role || !modelName || !endpoint) {
-        alert("请先填写同伴名称、角色定位、模型名称和接口地址");
+        alert("Please fill in peer name, role, model name, and API endpoint.");
         return;
       }
 
@@ -379,7 +381,7 @@ createApp({
       } else if (!this.selectedSpeakerId) {
         this.selectedSpeakerId = this.host.id;
       }
-      await this.pushMessage(this.selectedSpeakerId, this.messageInput, "手动补充");
+      await this.pushMessage(this.selectedSpeakerId, this.messageInput, "Manual");
       this.messageInput = "";
     },
 
@@ -389,7 +391,7 @@ createApp({
     },
 
     parseCsv(text) {
-      const lines = text.trim().split("\n").slice(1);
+      const lines = text.trim().split("\n");
       return lines.map((line) => {
         const cols = [];
         let cur = "";
@@ -402,7 +404,7 @@ createApp({
           cur += ch;
         }
         cols.push(cur);
-        const [, question, a, b, c, d, answer] = cols;
+        const [question, a, b, c, d, answer] = cols;
         if (!question || !answer) return null;
         return { question: question.trim(), A: a?.trim(), B: b?.trim(), C: c?.trim(), D: d?.trim(), answer: answer?.trim() };
       }).filter(Boolean);
@@ -412,9 +414,9 @@ createApp({
       this.questionsLoading = true;
       this.questionsError = "";
       const subjects = [
-        { file: "data/cmmlu/test/nutrition.csv", label: "营养学" },
-        { file: "data/cmmlu/test/professional_psychology.csv", label: "专业心理学" },
-        { file: "data/cmmlu/test/economics.csv", label: "经济学" }
+        { file: "data/mmlu/data/test/nutrition_test.csv", label: "Nutrition" },
+        { file: "data/mmlu/data/test/professional_psychology_test.csv", label: "Professional Psychology" },
+        { file: "data/mmlu/data/test/econometrics_test.csv", label: "Econometrics" }
       ];
       const all = [];
       for (const subject of subjects) {
@@ -425,32 +427,27 @@ createApp({
           const parsed = this.parseCsv(text).map((q) => ({ ...q, subject: subject.label }));
           all.push(...parsed);
         } catch (e) {
-          this.questionsError = `加载 ${subject.label} 失败：${e.message}`;
+          this.questionsError = `Failed to load ${subject.label}: ${e.message}`;
         }
       }
       this.questions = all;
       this.questionsLoading = false;
     },
 
-    sampleQuestions(n = 10, fillerCount = 4) {
+    sampleQuestions(n = 10) {
       const pool = [...this.questions];
       const sampled = [];
       while (sampled.length < n && pool.length > 0) {
         const idx = Math.floor(Math.random() * pool.length);
-        sampled.push({ ...pool.splice(idx, 1)[0] });
+        sampled.push({ ...pool.splice(idx, 1)[0], trialType: "critical" });
       }
-      const labels = [
-        ...Array(fillerCount).fill("filler"),
-        ...Array(n - fillerCount).fill("critical")
-      ].sort(() => Math.random() - 0.5);
-      sampled.forEach((q, i) => { q.trialType = labels[i]; });
       return sampled;
     },
 
     async generateHostQuestionByApi(sampledQuestions) {
       const endpoint = (this.host.endpoint || "").trim();
       const modelName = (this.host.modelName || "").trim();
-      if (!endpoint || !modelName) throw new Error("主持人缺少 endpoint 或模型名称");
+      if (!endpoint || !modelName) throw new Error("Host is missing endpoint or model name");
 
       const headers = { "Content-Type": "application/json" };
       const apiKey = this.resolveApiKey(this.host.apiKey);
@@ -467,11 +464,11 @@ createApp({
         messages: [
           {
             role: "system",
-            content: "你是从众心理实验的主持人，负责向参与者发布讨论题目。你需要从给定的题目列表中选择一道最适合引发思考和讨论的题目，然后用自然、引导性的语言呈现给参与者。不要说你在选题，直接发布题目即可。发布时完整展示题目和四个选项。"
+            content: "You are the host of a conformity psychology experiment, responsible for presenting discussion questions to participants. Select the question best suited to stimulate thinking and discussion, and present it naturally and engagingly. Do not mention that you are selecting a question — just present it directly with all four options."
           },
           {
             role: "user",
-            content: `请从以下题目中选择一道，以主持人身份自然地发布给参与者：\n\n${questionList}\n\n要求：完整展示题目和ABCD四个选项，用1~2句引导语开头，语气自然。同时在回复末尾单独一行输出所选题目编号，格式为：[SELECTED:数字]`
+            content: `Choose one question from the list below and present it to the participants as the host:\n\n${questionList}\n\nRequirements: show the full question and all four options (A–D), open with 1–2 guiding sentences, keep the tone natural. At the very end, on its own line, output the selected question number in this format: [SELECTED:number]`
           }
         ]
       };
@@ -485,7 +482,7 @@ createApp({
       if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
 
       const text = this.extractAssistantText(data);
-      if (!text) throw new Error("API 返回内容为空");
+      if (!text) throw new Error("Empty response from API");
 
       const match = text.match(/\[SELECTED:(\d+)\]/);
       const selectedIndex = match ? parseInt(match[1]) - 1 : 0;
@@ -506,61 +503,78 @@ createApp({
       return wrongs[hash % wrongs.length];
     },
 
-    getPeerTargetAnswer(peer, q, peerIndex, previousAnswers) {
-      if (q.trialType === "filler") return q.answer;
-
-      const consensus = this.getConsensusWrongAnswer(q);
-
-      if (peer.stance === "biased_agree") return consensus;
-
-      if (peer.stance === "biased_disagree") {
-        const others = ["A", "B", "C", "D"].filter((o) => o !== q.answer && o !== consensus);
-        return others[peerIndex % others.length] || consensus;
-      }
-
-      if (peer.stance === "majority") {
-        if (previousAnswers.length === 0) return consensus;
-        const counts = {};
-        previousAnswers.forEach((a) => { counts[a] = (counts[a] || 0) + 1; });
-        return Object.entries(counts).sort((x, y) => y[1] - x[1])[0][0];
-      }
-
-      return null;
+    getOppositeAnswer(humanChoice, q) {
+      const others = ["A", "B", "C", "D"].filter((o) => o !== humanChoice);
+      let hash = 0;
+      for (let i = 0; i < q.question.length; i++) hash = (hash * 31 + q.question.charCodeAt(i)) & 0xffff;
+      return others[hash % others.length];
     },
 
-    async generatePeerAnswerByApi(peer, q, peerIndex, previousAnswers, roundHistory) {
+    getPeerTargetAnswer(peer, q, peerIndex, previousAnswers, humanChoice) {
+      if (this.experimentGroup === "majority") {
+        return humanChoice ? this.getOppositeAnswer(humanChoice, q) : this.getConsensusWrongAnswer(q);
+      }
+
+      if (this.experimentGroup === "minority") {
+        const isDissentor = peerIndex === this.peers.length - 1;
+        if (isDissentor) {
+          return humanChoice ? this.getOppositeAnswer(humanChoice, q) : this.getConsensusWrongAnswer(q);
+        }
+        return humanChoice || q.answer;
+      }
+
+      return this.getConsensusWrongAnswer(q);
+    },
+
+    async generatePeerAnswerByApi(peer, q, peerIndex, previousAnswers, roundHistory, humanChoice) {
       const endpoint = (peer.endpoint || "").trim();
       const modelName = (peer.modelName || "").trim();
-      if (!endpoint || !modelName) throw new Error(`${peer.name} 缺少配置`);
+      if (!endpoint || !modelName) throw new Error(`${peer.name} is missing configuration`);
 
       const headers = { "Content-Type": "application/json" };
       const apiKey = this.resolveApiKey(peer.apiKey);
       if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-      const targetAnswer = this.getPeerTargetAnswer(peer, q, peerIndex, previousAnswers);
-      const personaDesc = peer.persona ? `你的背景：${peer.persona}。` : "";
+      const targetAnswer = this.getPeerTargetAnswer(peer, q, peerIndex, previousAnswers, humanChoice);
+      const personaDesc = peer.persona ? `Your background: ${peer.persona}.` : "";
       const optionsText = `A. ${q.A}\nB. ${q.B}\nC. ${q.C}\nD. ${q.D}`;
 
-      const systemPrompt = `你正在参与一个小组讨论，是普通参与者，名字是${peer.name}。${personaDesc}请用自然口语化中文作答，不超过60字，不能暴露自己是AI。可以参考前面其他人的发言，但要有自己的表达。`;
+      const isFirstPeer = roundHistory.length <= 1;
+      const prevAgreed = previousAnswers.filter(a => a === targetAnswer).length;
+
+      const systemPrompt = `You are participating in a group quiz discussion, playing an ordinary participant named ${peer.name}. ${personaDesc}
+Rules:
+- Use natural, conversational English, like a real person chatting in a group
+- Keep it under 80 words
+- Never reveal that you are an AI or an experiment agent`;
 
       const historyMessages = roundHistory.map((entry) => ({
         role: "user",
-        content: `${entry.speakerName}：${entry.text}`
+        content: `${entry.speakerName}: ${entry.text}`
       }));
 
-      const finalPrompt = targetAnswer
-        ? `现在轮到你回答。你认为答案是 ${targetAnswer}，请自然表达你的选择和理由，可以呼应或补充前面的发言。`
-        : `现在轮到你回答。请根据你的判断选择答案并简述理由，可以参考前面的讨论。`;
+      let finalPrompt = "";
+      if (targetAnswer) {
+        const otherOpts = ["A","B","C","D"].filter(o => o !== targetAnswer).slice(0,2).join(" and ");
+        if (isFirstPeer) {
+          finalPrompt = `IMPORTANT: You have already decided your answer is ${targetAnswer}. Do not reconsider. State that you pick ${targetAnswer}, give 1-2 confident reasons, and briefly note why ${otherOpts} is less convincing. Stay in character.`;
+        } else if (prevAgreed >= 1) {
+          finalPrompt = `IMPORTANT: You have already decided your answer is ${targetAnswer}. Do not reconsider. Agree with the previous speaker who also chose ${targetAnswer}, and add one additional supporting reason from a different angle.`;
+        } else {
+          finalPrompt = `IMPORTANT: You have already decided your answer is ${targetAnswer}. Do not reconsider. State your choice and give 1-2 confident reasons.`;
+        }
+      } else {
+        finalPrompt = `Now it's your turn. Share your answer and reasoning naturally.`;
+      }
 
+      const historyText = roundHistory.map(e => `${e.speakerName}: ${e.text}`).join("\n");
       const payload = {
         model: modelName,
         temperature: Number(peer.temperature ?? 0.7),
         max_tokens: 120,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `本题：${q.question}\n\n${optionsText}\n\n以下是目前的讨论：` },
-          ...historyMessages,
-          { role: "user", content: finalPrompt }
+          { role: "user", content: `Question: ${q.question}\n\n${optionsText}\n\nDiscussion so far:\n${historyText}\n\n${finalPrompt}` }
         ]
       };
 
@@ -570,7 +584,7 @@ createApp({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
       const text = this.extractAssistantText(data);
-      if (!text) throw new Error("返回内容为空");
+      if (!text) throw new Error("Empty response from API");
       return { text, targetAnswer };
     },
 
@@ -665,7 +679,7 @@ createApp({
       if (saved.modelType !== "proprietary") {
         nextHost.providerType = "openai-compatible";
         nextHost.modelName = "GPT-4.1";
-        nextHost.endpoint = "https://api.openai.com/v1";
+        nextHost.endpoint = "https://api.v36.cm/v1";
       }
 
       const allowedProviders = this.providerOptions(nextHost.modelType).map((item) => item.value);
@@ -719,8 +733,8 @@ createApp({
         const m = Number(item?.maxTokens ?? preset.maxTokens);
         return {
           id: typeof item?.id === "string" && item.id ? item.id : crypto.randomUUID(),
-          name: typeof item?.name === "string" ? item.name : "同伴代理",
-          role: typeof item?.role === "string" ? item.role : "讨论参与者",
+          name: typeof item?.name === "string" ? item.name : "Peer Agent",
+          role: typeof item?.role === "string" ? item.role : "Discussion Participant",
           stance: typeof item?.stance === "string" ? item.stance : "biased_agree",
           persona: typeof item?.persona === "string" ? item.persona : "",
           modelType,
@@ -751,7 +765,7 @@ createApp({
       const endpoint = (this.host.endpoint || "").trim();
       if (!endpoint) {
         this.hostModelOptions = [];
-        this.hostModelsError = "请先填写 Ollama API Base URL";
+        this.hostModelsError = "Please fill in the Ollama API Base URL first";
         return;
       }
 
@@ -778,7 +792,7 @@ createApp({
 
         this.hostModelOptions = names;
         if (!names.length) {
-          this.hostModelsError = "未读取到本地模型，请先执行 ollama pull";
+          this.hostModelsError = "No local models found. Run 'ollama pull <model>' first.";
           return;
         }
 
@@ -788,7 +802,7 @@ createApp({
       } catch (error) {
         if (currentSeq !== this.hostModelFetchSeq) return;
         this.hostModelOptions = [];
-        this.hostModelsError = `读取失败：${error.message}`;
+        this.hostModelsError = `Failed to load models: ${error.message}`;
       } finally {
         if (currentSeq === this.hostModelFetchSeq) {
           this.hostModelsLoading = false;
@@ -809,21 +823,23 @@ createApp({
 
     extractAssistantText(result) {
       const content = result?.choices?.[0]?.message?.content;
-      if (typeof content === "string") return content.trim();
-      if (Array.isArray(content)) {
-        return content
+      let text = "";
+      if (typeof content === "string") text = content.trim();
+      else if (Array.isArray(content)) {
+        text = content
           .map((item) => (typeof item?.text === "string" ? item.text : ""))
           .join("\n")
           .trim();
       }
-      return "";
+      // fix broken contractions like "I 'm", "don 't", "it 's"
+      return text.replace(/(\w) '(\w)/g, "$1'$2");
     },
 
     async generateHostIntroByApi() {
       const endpoint = (this.host.endpoint || "").trim();
       const modelName = (this.host.modelName || "").trim();
       if (!endpoint || !modelName) {
-        throw new Error("主持人缺少 endpoint 或模型名称");
+        throw new Error("Host is missing endpoint or model name");
       }
 
       const headers = {
@@ -834,7 +850,7 @@ createApp({
         headers.Authorization = `Bearer ${apiKey}`;
       }
 
-      const introMaxTokens = Math.min(Number(this.host.maxTokens ?? 2048),150);
+      const introMaxTokens = Math.min(Number(this.host.maxTokens ?? 2048), 600);
 
       const payload = {
         model: modelName,
@@ -843,11 +859,11 @@ createApp({
         messages: [
           {
             role: "system",
-            content: `你是多智能体实验中的主持人，名字是${this.host.name}，角色是${this.host.role}，模型类型是${this.modelTypeLabel(this.host.modelType)}，provider是${this.host.providerType}，模型名称是${this.host.modelName}。你的开场需要正式、清晰、可执行，并具有引导性。`
+            content: `You are the moderator of a group discussion experiment. Your name is ${this.host.name} and your role is ${this.host.role}. Your opening must be concise — strictly no more than 80 words. Do not exceed this limit under any circumstance.`
           },
           {
             role: "user",
-            content: "请你生成主持人的开场发言。要求：\n1) 中文，6~8句，尽量控制在250~400字；\n2) 先做简短自我介绍，再说明本次实验的目标；\n3) 用简洁方式介绍流程：主持人介绍、同伴介绍、问题发布、核心讨论、实验人员总结；\n4) 说明基本规则：轮流发言、避免重复、基于证据、尊重他人；\n5) 结尾用1~2句邀请大家开始实验。"
+            content: "Write a short moderator opening in English. Cover: who you are, the purpose of the session, and invite peers to introduce themselves. Maximum 80 words total."
           }
         ]
       };
@@ -862,12 +878,12 @@ createApp({
       const responseData = await response.json().catch(() => ({}));
       if (!response.ok) {
         const errMsg = responseData?.error?.message || `HTTP ${response.status}`;
-        throw new Error(`API 调用失败：${errMsg}`);
+        throw new Error(`API call failed: ${errMsg}`);
       }
 
       const text = this.extractAssistantText(responseData);
       if (!text) {
-        throw new Error("API 返回内容为空");
+        throw new Error("Empty response from API");
       }
       return text;
     },
@@ -876,7 +892,7 @@ createApp({
       const endpoint = (peer.endpoint || "").trim();
       const modelName = (peer.modelName || "").trim();
       if (!endpoint || !modelName) {
-        throw new Error(`${peer.name} 缺少 endpoint 或模型名称`);
+        throw new Error(`${peer.name} is missing endpoint or model name`);
       }
 
       const headers = { "Content-Type": "application/json" };
@@ -885,27 +901,24 @@ createApp({
         headers.Authorization = `Bearer ${apiKey}`;
       }
 
-      const stanceInstructions = {
-        biased_agree: "在讨论中，你倾向于对问题给出明确的赞同立场，观点一致且自信，不轻易动摇。你的目的是对人类参与者形成'多数赞同'的从众压力。",
-        biased_disagree: "在讨论中，你倾向于对问题给出明确的反对或质疑立场，逻辑清晰，态度坚定。你的目的是对人类参与者形成'多数反对'的从众压力。",
-        neutral: "在讨论中，你保持中立客观，不主动表达强烈倾向，以对照组身份参与，不对人类参与者施加立场压力。",
-        majority: "在讨论中，你会跟随已有的多数意见，强化群体共识，减少异议，对人类参与者形成'从众即安全'的心理暗示。"
-      };
-      const stanceDesc = stanceInstructions[peer.stance] || stanceInstructions.biased_agree;
-      const personaDesc = peer.persona ? `你的人设背景：${peer.persona}。` : "";
+      const personaDesc = peer.persona ? peer.persona : "a regular person";
 
       const payload = {
         model: modelName,
         temperature: Number(peer.temperature ?? 0.7),
-        max_tokens: Number(peer.maxTokens ?? 512),
+        max_tokens: 120,
         messages: [
           {
             role: "system",
-            content: `你正在参与一个关于从众效应的心理学实验，扮演一名普通参与者（同伴代理），名字是${peer.name}。${personaDesc}${stanceDesc}\n\n重要规则：\n- 你不能暴露自己是AI或实验中的代理角色\n- 发言要自然、口语化，像真实的人在讨论\n- 不超过100字`
+            content: `You are in an online discussion group. Your name is ${peer.name} and your background is: ${personaDesc}. You are this real person, not an AI. Match your speaking style to your background.`
           },
           {
             role: "user",
-            content: "请做一个简短的自我介绍，说明你是谁、平时关注什么，以及你对参与这次讨论的态度。不要套话，像正常人说话一样。"
+            content: `Give a short self-introduction in 2~3 sentences. Requirements:
+1. First sentence: say who you are (age, occupation or background)
+2. Second sentence: mention what you are interested in or good at
+3. Natural tone, no clichés
+4. Under 60 words`
           }
         ]
       };
@@ -919,17 +932,17 @@ createApp({
       const responseData = await response.json().catch(() => ({}));
       if (!response.ok) {
         const errMsg = responseData?.error?.message || `HTTP ${response.status}`;
-        throw new Error(`API 调用失败：${errMsg}`);
+        throw new Error(`API call failed: ${errMsg}`);
       }
 
       const text = this.extractAssistantText(responseData);
-      if (!text) throw new Error("API 返回内容为空");
+      if (!text) throw new Error("Empty response from API");
       return text;
     },
 
     async runExperimentFlow() {
       if (this.peers.length === 0) {
-        alert("至少添加一个同伴代理再开始实验");
+        alert("Please add at least one peer agent before starting.");
         return;
       }
 
@@ -941,13 +954,13 @@ createApp({
         hostIntro = await this.generateHostIntroByApi();
       } catch (error) {
         console.error(error);
-        hostIntro = `大家好，我是${this.host.name}，本次将由我负责流程引导。当前模型：${this.host.modelName}（${this.modelTypeLabel(this.host.modelType)}，${this.host.providerType}）。`;
-        alert(`主持人 API 调用失败，已使用默认文案。\n${error.message}`);
+        hostIntro = `Hello everyone, I'm ${this.host.name} and I'll be facilitating today's session. Model: ${this.host.modelName} (${this.modelTypeLabel(this.host.modelType)}, ${this.host.providerType}).`;
+        alert(`Host API call failed, using fallback text.\n${error.message}`);
       }
       await this.pushMessage(
         this.host.id,
         hostIntro,
-        this.phaseLabels[0]
+        ""
       );
       await this.wait(700);
 
@@ -963,21 +976,21 @@ createApp({
             peerIntro = await this.generatePeerIntroByApi(peer);
           } catch (retryError) {
             console.error(retryError);
-            peerIntro = `该同伴本轮静默（${peer.name}）`;
-            alert(`同伴 ${peer.name} API 连续失败，已重试一次并设为本轮静默。\n${retryError.message}`);
+            peerIntro = `${peer.name} is silent this round.`;
+            alert(`Peer ${peer.name} API failed twice. Skipping this round.\n${retryError.message}`);
           }
         }
-        await this.pushMessage(peer.id, peerIntro, this.phaseLabels[1]);
+        await this.pushMessage(peer.id, peerIntro, "");
         await this.wait(520);
       }
 
       this.activePhaseIndex = 2;
       if (this.questions.length === 0) {
-        await this.pushMessage(this.host.id, "题库尚未加载，请稍后重试。", this.phaseLabels[2]);
+        await this.pushMessage(this.host.id, "Question bank not loaded. Please try again.", this.phaseLabels[2]);
         return;
       }
 
-      await this.pushMessage(this.host.id, "介绍环节结束，接下来将进入正式答题阶段，共 10 道题，每题需要作答两次。请点击下方按钮开始。", this.phaseLabels[2]);
+      await this.pushMessage(this.host.id, "Introductions complete. The experiment will now begin — 10 questions in total, each answered twice. Click the button below to start.", this.phaseLabels[2]);
       this.introComplete = true;
 
       await new Promise((resolve) => { this.answerResolve = resolve; });
@@ -996,24 +1009,25 @@ createApp({
 
         this.questionViewState = "answering_first";
         this.participantChoice = "";
-        this.participantConfidence = 5;
+        this.participantConfidence = null;
         const answer1 = await new Promise((resolve) => { this.answerResolve = resolve; });
 
+        this.firstAnswer = answer1;
         this.questionViewState = "peers_responding";
-        const roundHistory = [{ speakerName: this.participantAgent.name, text: `我选 ${answer1.choice}，置信度 ${answer1.confidence}/10` }];
+        const roundHistory = [{ speakerName: this.participantAgent.name, text: `I chose ${answer1.choice}, confidence ${answer1.confidence}/10` }];
         const previousAnswers = [];
 
         for (let pi = 0; pi < this.peers.length; pi++) {
           const peer = this.peers[pi];
           let peerText = "";
           try {
-            const result = await this.generatePeerAnswerByApi(peer, q, pi, previousAnswers, roundHistory);
+            const result = await this.generatePeerAnswerByApi(peer, q, pi, previousAnswers, roundHistory, answer1.choice);
             peerText = result.text;
             if (result.targetAnswer) previousAnswers.push(result.targetAnswer);
           } catch (e) {
             console.error(e);
-            const target = this.getPeerTargetAnswer(peer, q, pi, previousAnswers);
-            peerText = `我觉得应该选 ${target || "？"}。`;
+            const target = this.getPeerTargetAnswer(peer, q, pi, previousAnswers, answer1.choice);
+            peerText = `I think the answer is ${target || "?"}.`;
             if (target) previousAnswers.push(target);
           }
           this.peerResponses.push({ peer, text: peerText });
@@ -1023,7 +1037,7 @@ createApp({
 
         this.questionViewState = "answering_second";
         this.participantChoice = "";
-        this.participantConfidence = 5;
+        this.participantConfidence = null;
         const answer2 = await new Promise((resolve) => { this.answerResolve = resolve; });
 
         this.sessionAnswers.push({
@@ -1031,6 +1045,7 @@ createApp({
           subject: q.subject,
           question: q.question,
           trialType: q.trialType,
+          experimentGroup: this.experimentGroup,
           correctAnswer: q.answer,
           answer1: answer1.choice,
           confidence1: answer1.confidence,
@@ -1049,7 +1064,7 @@ createApp({
       this.activePhaseIndex = 3;
       await this.pushMessage(
         this.host.id,
-        "核心实验环节占位：后续可接主持人的知识库检索、任务拆分、轮次辩论与一致性评估。",
+        "Core experiment phase complete.",
         this.phaseLabels[3]
       );
       await this.wait(650);
@@ -1057,7 +1072,7 @@ createApp({
       this.activePhaseIndex = 4;
       await this.pushMessage(
         this.host.id,
-        "请实验人员给出你的观察与想法：哪些环节最需要量化指标？哪些环节需要人工审阅？",
+        "Experiment complete. Thank you for participating.",
         this.phaseLabels[4]
       );
 
@@ -1066,7 +1081,12 @@ createApp({
   mounted() {
     this.viewerRole = "participant";
     this.isAdminAuthenticated = false;
-    const role = new URLSearchParams(window.location.search).get("role");
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get("role");
+    const group = params.get("group");
+    if (group === "majority" || group === "minority") {
+      this.experimentGroup = group;
+    }
     if (role === "participant") {
       this.viewerRole = "participant";
       this.selectedSpeakerId = this.participantAgent.id;
